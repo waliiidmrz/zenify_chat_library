@@ -7,10 +7,11 @@ class ChatPaginationHandler {
   final Timeline timeline;
   final ValueNotifier<List<Event>> messagesNotifier;
 
-  bool isLoading = false;
+  final ValueNotifier<bool> isLoading = ValueNotifier(false);
   bool hasReachedStart = false;
   final StreamController<void> _timelineUpdateController =
       StreamController<void>.broadcast();
+  ValueNotifier<bool> get isLoadingNotifier => isLoading;
 
   ChatPaginationHandler({
     required this.scrollController,
@@ -27,18 +28,19 @@ class ChatPaginationHandler {
     final offset = scrollController.offset;
     final triggerDistance = scrollController.position.maxScrollExtent - 150;
 
-    if (!isLoading && !hasReachedStart && offset >= triggerDistance) {
+    if (!isLoading.value && !hasReachedStart && offset >= triggerDistance) {
       loadOlderMessages();
     }
   }
 
   Future<void> loadOlderMessages() async {
-    if (hasReachedStart || isLoading) return;
+    if (hasReachedStart || isLoading.value) return;
 
-    isLoading = true;
+    isLoading.value = true;
+    final stopwatch = Stopwatch()..start();
+
     final before = timeline.events.length;
 
-    // Start fetch
     await timeline.getRoomEvents(
       direction: Direction.b,
       historyCount: 15,
@@ -56,12 +58,10 @@ class ChatPaginationHandler {
     final newlyFetched = timeline.events
         .where((e) => e.type == EventTypes.Message && e.body.trim().isNotEmpty)
         .toList()
-      ..sort((a, b) =>
-          b.originServerTs.compareTo(a.originServerTs)); // newest to oldest
+      ..sort((a, b) => b.originServerTs.compareTo(a.originServerTs));
 
     final existing = messagesNotifier.value;
 
-    // Prepend older messages
     final merged = [
       ...existing,
       ...newlyFetched.where((e) => existing.every(
@@ -69,22 +69,13 @@ class ChatPaginationHandler {
     ];
 
     messagesNotifier.value = merged;
-    print("🧭 Newly fetched (descending):");
-    for (final e in newlyFetched) {
-      print("- ${e.body} | ts=${e.originServerTs}");
+
+    final elapsed = stopwatch.elapsed;
+    if (elapsed < const Duration(seconds: 1)) {
+      await Future.delayed(Duration(seconds: 1) - elapsed);
     }
 
-    print("🧭 Existing before merge:");
-    for (final e in existing) {
-      print("- ${e.body} | ts=${e.originServerTs}");
-    }
-
-    print("🧾  Final rendered (descending):");
-    for (final e in merged) {
-      print("- ${e.body} | ts=${e.originServerTs}");
-    }
-
-    isLoading = false;
+    isLoading.value = false;
   }
 
   void dispose() {

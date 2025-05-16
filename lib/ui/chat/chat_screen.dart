@@ -25,19 +25,20 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   late final ScrollController _scrollController;
   late final ValueNotifier<List<Event>> messagesNotifier;
+  late final ValueNotifier<bool> _isLoadingNotifier;
   late final ChatRoom chatRoom;
   Timeline? _timeline;
   ChatPaginationHandler? _pagination;
+
   bool _isMoreRecent(Event a, Event b) {
-    final aStatus = a.status.index;
-    final bStatus = b.status.index;
-    return aStatus > bStatus;
+    return a.status.index > b.status.index;
   }
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
+    _isLoadingNotifier = ValueNotifier(false);
 
     chatRoom = widget.store.getRoomById(widget.chatRoomid) ??
         ChatRoom.empty(widget.chatRoomid);
@@ -47,12 +48,12 @@ class _ChatScreenState extends State<ChatScreen> {
       await _initializeTimeline();
       _scrollToBottom();
     });
+
     widget.store.rooms.addListener(() {
       final updatedRoom = widget.store.getRoomById(widget.chatRoomid);
       if (updatedRoom != null) {
         final List<Event> merged = [];
 
-        // Build a map of existing events using both IDs
         final Map<String, Event> existingByEventId = {
           for (var e in messagesNotifier.value.where((e) => e.eventId != null))
             e.eventId!: e,
@@ -75,15 +76,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       : null;
 
           if (existingEvent == null) {
-            merged.add(newEvent); // not a duplicate
+            merged.add(newEvent);
           } else if (_isMoreRecent(newEvent, existingEvent)) {
-            merged.add(newEvent); // updated version
+            merged.add(newEvent);
           } else {
-            merged.add(existingEvent); // keep older
+            merged.add(existingEvent);
           }
         }
 
-        // Include other events that weren't replaced
         final updatedIds = merged
             .map((e) => e.eventId)
             .whereType<String>()
@@ -91,8 +91,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ..addAll(merged.map((e) => e.transactionId).whereType<String>());
 
         for (final e in messagesNotifier.value) {
-          if (!(updatedIds.contains(e.eventId) ||
-              updatedIds.contains(e.transactionId))) {
+          if (!updatedIds.contains(e.eventId) &&
+              !updatedIds.contains(e.transactionId)) {
             merged.add(e);
           }
         }
@@ -125,7 +125,13 @@ class _ChatScreenState extends State<ChatScreen> {
         timeline: _timeline!,
         messagesNotifier: messagesNotifier,
       );
+
+      // Sync isLoading with notifier
+      _pagination!.isLoading.addListener(() {
+        _isLoadingNotifier.value = _pagination!.isLoading.value;
+      });
     }
+
     await matrixClient.initializeChatRoom(
       chatRoom.room!,
       onUpdate: _pagination?.onTimelineUpdate,
@@ -139,11 +145,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await chatRoom.room?.sendTextEvent(content);
       _scrollToBottom();
       print("🚀 Sent text: $content");
-      print(
-          "📦 Messages in notifier after send: ${messagesNotifier.value.length}");
-
-      print(
-          "- notifier [${messagesNotifier.value.first.eventId}] txn=${messagesNotifier.value.first.transactionId} status=${messagesNotifier.value.first.status} body='${messagesNotifier.value.first.body}'");
     } catch (e) {
       print("❌ Failed to send message: $e");
       ScaffoldMessenger.of(context).showSnackBar(
@@ -166,6 +167,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.dispose();
     messagesNotifier.dispose();
     _pagination?.dispose();
+    _isLoadingNotifier.dispose();
     super.dispose();
   }
 
@@ -176,12 +178,17 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: MessageList(
-              messagesNotifier: messagesNotifier,
-              scrollController: _scrollController,
-              currentUserId: chatRoom.room?.client.userID ?? '',
-              isLoadingOlder: _pagination?.isLoading ?? false,
-              hasReachedStart: _pagination?.hasReachedStart ?? false,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _isLoadingNotifier,
+              builder: (context, isLoadingOlder, _) {
+                return MessageList(
+                  messagesNotifier: messagesNotifier,
+                  scrollController: _scrollController,
+                  currentUserId: chatRoom.room?.client.userID ?? '',
+                  isLoadingOlder: isLoadingOlder,
+                  hasReachedStart: _pagination?.hasReachedStart ?? false,
+                );
+              },
             ),
           ),
           MessageInput(onSend: _sendMessage),
