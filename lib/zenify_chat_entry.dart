@@ -3,7 +3,8 @@ import 'package:zenify_chat/matrix/matrix_client_service.dart';
 import 'package:zenify_chat/ui/rooms/room_screen.dart';
 
 class ZenifyChatEntry extends StatefulWidget {
-  const ZenifyChatEntry({super.key});
+  final VoidCallback? onLogout;
+  const ZenifyChatEntry({super.key, this.onLogout});
 
   @override
   State<ZenifyChatEntry> createState() => _ZenifyChatEntryState();
@@ -39,6 +40,7 @@ class _ZenifyChatEntryState extends State<ZenifyChatEntry> {
 
         return RoomsScreen(
           store: matrixClientService.store,
+          onLogout: widget.onLogout,
         );
       },
     );

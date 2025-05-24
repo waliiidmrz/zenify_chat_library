@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:zenify_chat/ui/rooms/utils/date_utils.dart';
 
+/// 🧱 A single tile representing a room inside RoomListView
 class RoomTile extends StatelessWidget {
   final String roomId;
   final String title;
@@ -8,6 +9,8 @@ class RoomTile extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final bool isLastMessageSeen;
+  final int notificationCount;
 
   const RoomTile({
     super.key,
@@ -17,6 +20,8 @@ class RoomTile extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     required this.onLongPress,
+    required this.isLastMessageSeen,
+    required this.notificationCount,
   });
 
   @override
@@ -53,11 +58,38 @@ class RoomTile extends StatelessWidget {
             lastMessage,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight:
+                  isLastMessageSeen ? FontWeight.normal : FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
-          trailing: Text(
-            formatRoomDate(
-                null), // 🔧 Replace with actual timestamp if available
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (notificationCount > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$notificationCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                formatRoomDate(null),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
           ),
         ),
       ),

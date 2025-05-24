@@ -1,5 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zenify_chat/api/auth/login_api.dart';
+import 'package:zenify_chat/api/auth/logout_user.dart';
 import 'package:zenify_chat/api/auth/register_user.dart';
 import 'package:zenify_chat/matrix/matrix_client_service.dart';
 
@@ -24,7 +25,10 @@ class AuthService {
     return success ? matrix : null;
   }
 
-  static Future<void> logout() async {
+  static Future<void> logout({String? accessToken}) async {
+    if (accessToken != null) {
+      await logoutUser(accessToken); // Call backend logout endpoint
+    }
     await _storage.deleteAll();
   }
 

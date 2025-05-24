@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:zenify_chat/models/chatroom.dart';
-import 'package:zenify_chat/store/store_service.dart';
+import 'package:zenify_chat/services/auth_service.dart';
+import 'package:zenify_chat/store/mock_store.dart';
 import 'package:zenify_chat/ui/chat/chat_screen.dart';
 import 'package:zenify_chat/ui/create_chat_room/create_chat_screen.dart';
 import 'package:zenify_chat/ui/rooms/widgets/room_list_view.dart';
 import 'package:zenify_chat/ui/rooms/widgets/rooms_app_bar.dart';
 
+/// 🏠 Displays the list of joined chat rooms
 class RoomsScreen extends StatefulWidget {
-  final StoreService store;
+  final MockStoreService store;
   final String? initialRoomId;
+  final VoidCallback? onLogout;
 
   const RoomsScreen({
     super.key,
     required this.store,
     this.initialRoomId,
+    this.onLogout,
   });
 
   @override
@@ -24,22 +28,16 @@ class _RoomsScreenState extends State<RoomsScreen> {
   Set<ChatRoom> selectedRooms = {};
   bool isSelectionMode = false;
 
-  @override
-  void initState() {
-    super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.initialRoomId != null) {
-        final rooms = widget.store.rooms.value;
-        final room = rooms.firstWhere(
-          (r) => r.id == widget.initialRoomId,
-          orElse: () => rooms.first,
-        );
-        _navigateToChat(room);
-      }
-    });
+  /// 🔁 Handles tap on a room tile
+  void _onTapRoom(ChatRoom room) {
+    if (isSelectionMode) {
+      _toggleRoomSelection(room);
+    } else {
+      _navigateToChat(room);
+    }
   }
 
+  /// 📍 Navigates to individual chat screen
   void _navigateToChat(ChatRoom room) {
     Navigator.push(
       context,
@@ -52,19 +50,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
     );
   }
 
-  void _onTapRoom(ChatRoom room) {
-    if (isSelectionMode) {
-      setState(() {
-        selectedRooms.contains(room)
-            ? selectedRooms.remove(room)
-            : selectedRooms.add(room);
-        if (selectedRooms.isEmpty) isSelectionMode = false;
-      });
-    } else {
-      _navigateToChat(room);
-    }
-  }
-
+  /// 🧭 Triggered by long press to start selection mode
   void _onLongPressRoom(ChatRoom room) {
     setState(() {
       isSelectionMode = true;
@@ -72,11 +58,28 @@ class _RoomsScreenState extends State<RoomsScreen> {
     });
   }
 
+  /// 🔁 Select/unselect a room
+  void _toggleRoomSelection(ChatRoom room) {
+    setState(() {
+      selectedRooms.contains(room)
+          ? selectedRooms.remove(room)
+          : selectedRooms.add(room);
+      if (selectedRooms.isEmpty) isSelectionMode = false;
+    });
+  }
+
+  /// ❌ Clears all selected rooms and exits selection mode
   void _clearSelection() {
     setState(() {
       isSelectionMode = false;
       selectedRooms.clear();
     });
+  }
+
+  /// 🚪 Logs the user out via AuthService
+  Future<void> _handleLogout() async {
+    await AuthService.logout();
+    widget.onLogout?.call();
   }
 
   @override
@@ -87,6 +90,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
         isSelectionMode: isSelectionMode,
         selectedCount: selectedRooms.length,
         onClearSelection: _clearSelection,
+        onLogout: _handleLogout,
       ),
       body: RoomListView(
         store: widget.store,

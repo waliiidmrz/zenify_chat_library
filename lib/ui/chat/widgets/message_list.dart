@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
+import 'package:zenify_chat/models/utils/model_extensions.dart';
 import 'package:zenify_chat/ui/chat/utils/event_mapper.dart';
+import 'package:zenify_chat/ui/chat/utils/user_utils.dart';
 import 'package:zenify_chat/ui/chat/widgets/message_bubble.dart';
 
+/// 📄 Renders the scrollable list of chat messages with pagination indicators
 class MessageList extends StatelessWidget {
   final ValueNotifier<List<Event>> messagesNotifier;
   final ScrollController scrollController;
@@ -18,6 +21,40 @@ class MessageList extends StatelessWidget {
     this.isLoadingOlder = false,
     this.hasReachedStart = false,
   });
+  void _showReactionBar(BuildContext context, Event event) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 20,
+          children: ['❤️', '👍', '😂', '🔥', '👀'].map((emoji) {
+            return GestureDetector(
+              onTap: () async {
+                Navigator.pop(context);
+                final room = event.room;
+                final userId = room.client.userID!;
+                final existing = event.getReactionFor(userId);
+
+                if (existing == emoji) {
+                  // 🚫 Toggle off (not supported yet: requires tracking reactionEventId)
+                  return;
+                }
+
+                await room.sendReaction(event.eventId, emoji);
+              },
+              child: Text(emoji, style: TextStyle(fontSize: 30)),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,10 +71,9 @@ class MessageList extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           itemCount: totalItems,
           itemBuilder: (context, index) {
-            // ⏳ Loading spinner
+            // ⏳ Show loading spinner
             if (isLoadingOlder &&
                 index == totalItems - (hasReachedStart ? 2 : 1)) {
-              print("⏳ Showing loading spinner at top of chat (index=$index)");
               return const Center(
                 child: Padding(
                   padding: EdgeInsets.only(top: 12, bottom: 16),
@@ -46,7 +82,7 @@ class MessageList extends StatelessWidget {
               );
             }
 
-            // 📜 Start of conversation
+            // 📜 Show "start of conversation"
             if (hasReachedStart && index == totalItems - 1) {
               return const Center(
                 child: Padding(
@@ -60,17 +96,9 @@ class MessageList extends StatelessWidget {
             }
 
             final event = events[index];
-            print(
-                "🎨 Rendering ${event.body} | status: ${event.status} | ts=${event.originServerTs}");
-
             final message = mapEventToMessage(event);
             final isMe = message.sender == currentUserId;
-            final avatarLetter = message.sender
-                .replaceAll("@", "")
-                .split(":")
-                .first
-                .substring(0, 1)
-                .toUpperCase();
+            final avatarLetter = getAvatarLetter(message.sender);
 
             return MessageBubble(
               message: message,
@@ -79,8 +107,9 @@ class MessageList extends StatelessWidget {
               avatarLetter: avatarLetter,
               onTap: () {},
               onSwipe: () {},
-              onLongPress: () {},
-              onReact: (_) {},
+              onLongPress: () {
+                _showReactionBar(context, event);
+              },
             );
           },
         );

@@ -1,16 +1,19 @@
+// Imports
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
-import 'package:zenify_chat/matrix/matrix_client_service.dart';
+import 'package:zenify_chat/models/utils/model_extensions.dart';
 import 'package:zenify_chat/models/chatroom.dart';
-import 'package:zenify_chat/store/store_service.dart';
+import 'package:zenify_chat/store/mock_store.dart';
+import 'package:zenify_chat/ui/chat/utils/event_utils.dart';
 import 'package:zenify_chat/ui/chat/widgets/chat_app_bar.dart';
 import 'package:zenify_chat/ui/chat/widgets/message_input.dart';
 import 'package:zenify_chat/ui/chat/widgets/message_list.dart';
 import 'package:zenify_chat/ui/chat/utils/chat_pagination_handler.dart';
+import 'package:zenify_chat/ui/chat/utils/receipt_utils.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatRoomid;
-  final StoreService store;
+  final MockStoreService store;
 
   const ChatScreen({
     super.key,
@@ -30,10 +33,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Timeline? _timeline;
   ChatPaginationHandler? _pagination;
 
-  bool _isMoreRecent(Event a, Event b) {
-    return a.status.index > b.status.index;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -41,7 +40,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _isLoadingNotifier = ValueNotifier(false);
 
     chatRoom = widget.store.getRoomById(widget.chatRoomid) ??
-        ChatRoom.empty(widget.chatRoomid);
+        ChatRoomUtils.empty(widget.chatRoomid);
     messagesNotifier = ValueNotifier(List.from(chatRoom.events));
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -49,93 +48,65 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
     });
 
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (chatRoom.room != null) {
+        await markRoomAsRead(chatRoom.room!);
+
+        final updatedTile = chatRoom.tileDetails.copyWith(
+          isLastMessageSeen: true,
+          lastMessage: chatRoom.tileDetails.lastMessage,
+        );
+
+        final updatedRoom = chatRoom.copyWith(
+          tileDetails: updatedTile,
+          room: chatRoom.room,
+        );
+
+        widget.store.addOrUpdateRoom(updatedRoom);
+      }
+    });
+
     widget.store.rooms.addListener(() {
       final updatedRoom = widget.store.getRoomById(widget.chatRoomid);
       if (updatedRoom != null) {
-        final List<Event> merged = [];
+        final merged = mergeAndSortEvents(
+          messagesNotifier.value,
+          updatedRoom.events,
+        );
 
-        final Map<String, Event> existingByEventId = {
-          for (var e in messagesNotifier.value.where((e) => e.eventId != null))
-            e.eventId!: e,
-        };
-        final Map<String, Event> existingByTxnId = {
-          for (var e
-              in messagesNotifier.value.where((e) => e.transactionId != null))
-            e.transactionId!: e,
-        };
-
-        for (final newEvent in updatedRoom.events) {
-          final id = newEvent.eventId;
-          final txn = newEvent.transactionId;
-
-          final existingEvent =
-              (id != null && existingByEventId.containsKey(id))
-                  ? existingByEventId[id]
-                  : (txn != null && existingByTxnId.containsKey(txn))
-                      ? existingByTxnId[txn]
-                      : null;
-
-          if (existingEvent == null) {
-            merged.add(newEvent);
-          } else if (_isMoreRecent(newEvent, existingEvent)) {
-            merged.add(newEvent);
-          } else {
-            merged.add(existingEvent);
-          }
-        }
-
-        final updatedIds = merged
-            .map((e) => e.eventId)
-            .whereType<String>()
-            .toSet()
-          ..addAll(merged.map((e) => e.transactionId).whereType<String>());
-
-        for (final e in messagesNotifier.value) {
-          if (!updatedIds.contains(e.eventId) &&
-              !updatedIds.contains(e.transactionId)) {
-            merged.add(e);
-          }
-        }
-
-        merged.sort((a, b) => b.originServerTs.compareTo(a.originServerTs));
-
-        print("📊 Updating messagesNotifier with ${merged.length} events");
-        for (var e in merged) {
-          print(
-              "🎨 Rendering ${e.body} | status: ${e.status} | ts=${e.originServerTs}");
-        }
-
-        messagesNotifier.value = merged;
+        messagesNotifier.value = List.from(merged.reversed);
       }
     });
   }
 
   Future<void> _initializeTimeline() async {
-    final matrixClient = MatrixClientService();
-    _timeline = matrixClient.getTimelineForRoom(chatRoom.id);
+    final thisroom = widget.store.getRoomById(widget.chatRoomid);
 
-    if (_timeline != null) {
-      final updatedRoom = widget.store.getRoomById(chatRoom.id);
-      if (updatedRoom != null) {
-        messagesNotifier.value = List.from(updatedRoom.events);
-      }
-
-      _pagination = ChatPaginationHandler(
-        scrollController: _scrollController,
-        timeline: _timeline!,
-        messagesNotifier: messagesNotifier,
-      );
-
-      // Sync isLoading with notifier
-      _pagination!.isLoading.addListener(() {
-        _isLoadingNotifier.value = _pagination!.isLoading.value;
-      });
+    _timeline = await thisroom?.room?.getTimeline(onUpdate: () {
+      _pagination?.onTimelineUpdate();
+    });
+    if (_timeline == null) {
+      print("⚠️ No timeline found for room ${chatRoom.id}");
+      return;
     }
 
-    await matrixClient.initializeChatRoom(
-      chatRoom.room!,
-      onUpdate: _pagination?.onTimelineUpdate,
+    // Use latest events from the store
+    final updatedRoom = widget.store.getRoomById(chatRoom.id);
+    if (updatedRoom != null) {
+      messagesNotifier.value = List.from(updatedRoom.events.reversed);
+    }
+
+    _pagination = ChatPaginationHandler(
+      scrollController: _scrollController,
+      timeline: _timeline!,
+      messagesNotifier: messagesNotifier,
+      store: widget.store, // ✅ Pass store reference
     );
+
+    // Sync isLoading state with notifier
+    _pagination!.isLoading.addListener(() {
+      _isLoadingNotifier.value = _pagination!.isLoading.value;
+    });
   }
 
   Future<void> _sendMessage(String content) async {
@@ -162,6 +133,16 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _handleTypingChanged(bool isTyping) {
+    print("⌨️ Typing state changed: $isTyping");
+
+    chatRoom.room?.setTyping(isTyping, timeout: 5000).then((_) {
+      print("✅ setTyping($isTyping) sent to server");
+    }).catchError((e) {
+      print("❌ Failed to send typing event: $e");
+    });
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -173,10 +154,33 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final typingUsers = chatRoom.room?.typingUsers ?? [];
+    if (typingUsers.isNotEmpty) {
+      print("👀 Detected typing users: ${typingUsers.map((u) => u.id)}");
+    }
     return Scaffold(
-      appBar: ChatAppBar(title: chatRoom.tileDetails.displayName),
+      appBar: ChatAppBar(
+        title: chatRoom.tileDetails.displayName,
+        store: widget.store,
+        roomId: widget.chatRoomid,
+      ),
       body: Column(
         children: [
+          // 👇 Typing Indicator Widget
+          if (typingUsers.isNotEmpty)
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6),
+              child: Text(
+                "${typingUsers.map((u) => u.calcDisplayname()).join(', ')} is typing...",
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+
           Expanded(
             child: ValueListenableBuilder<bool>(
               valueListenable: _isLoadingNotifier,
@@ -191,7 +195,23 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-          MessageInput(onSend: _sendMessage),
+
+          MessageInput(
+            onSend: _sendMessage,
+            onTypingChanged: _handleTypingChanged,
+            onFilePicked: (fileBytes, fileName) async {
+              final room = chatRoom.room;
+
+              final file = MatrixFile.fromMimeType(
+                bytes: fileBytes,
+                name: fileName,
+              );
+              print("🚀 Sending image: $fileName");
+              print("🧾 MIME: ${file.mimeType}");
+              print("📦 Size: ${file.size} bytes");
+              await room?.sendFileEvent(file);
+            },
+          ),
         ],
       ),
     );

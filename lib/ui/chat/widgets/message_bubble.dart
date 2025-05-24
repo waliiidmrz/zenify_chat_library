@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:zenify_chat/models/message.dart';
+ import 'package:zenify_chat/models/message.dart';
 import 'message_avatar.dart';
 import 'message_container.dart';
 
+/// 🟩 Visual wrapper for each message with swipe, tap, long press handlers
 class MessageBubble extends StatefulWidget {
   final Message message;
   final bool isMe;
@@ -12,7 +13,6 @@ class MessageBubble extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onSwipe;
   final VoidCallback? onAddReaction;
-  final void Function(String emoji) onReact;
 
   const MessageBubble({
     super.key,
@@ -23,7 +23,6 @@ class MessageBubble extends StatefulWidget {
     required this.onLongPress,
     required this.onTap,
     required this.onSwipe,
-    required this.onReact,
     this.onAddReaction,
   });
 
@@ -47,14 +46,11 @@ class _MessageBubbleState extends State<MessageBubble>
     _swipeAnimation = Tween<Offset>(
       begin: Offset.zero,
       end: const Offset(0.12, 0),
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
 
   void _handleSwipe() {
     if (hasSwiped) return;
-
     _controller.forward().then((_) {
       _controller.reverse();
       widget.onSwipe();
@@ -86,7 +82,8 @@ class _MessageBubbleState extends State<MessageBubble>
                 widget.isMe ? MainAxisAlignment.start : MainAxisAlignment.end,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              MessageAvatar(initial: widget.avatarLetter ?? "?"),
+              if (widget.avatarLetter != null)
+                MessageAvatar(initial: widget.avatarLetter!),
               Flexible(
                 child: MessageContainer(
                   message: widget.message,

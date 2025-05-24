@@ -19,7 +19,7 @@ class ScreenHeader extends StatelessWidget {
         children: [
           if (showBackButton)
             IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.black87),
+              icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
               onPressed: () => Navigator.of(context).pop(),
             )
           else

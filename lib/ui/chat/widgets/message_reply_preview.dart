@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// 🔁 Shows the replied-to portion of a message if it begins with "> "
 class MessageReplyPreview extends StatelessWidget {
   final String content;
 
@@ -16,11 +17,14 @@ class MessageReplyPreview extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         color: Colors.grey.shade200,
-        border:
-            const Border(left: BorderSide(color: Colors.blueAccent, width: 4)),
+        border: const Border(
+          left: BorderSide(color: Colors.blueAccent, width: 4),
+        ),
       ),
-      child: Text(reply,
-          style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 13)),
+      child: Text(
+        reply,
+        style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 13),
+      ),
     );
   }
 }
